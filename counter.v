@@ -12,12 +12,12 @@ module counter (
 );
     
     reg [15:0] prescale_counter;
-    wire [15:0] prescale_target_val;
+    wire [15:0] prescale_target;
     wire prescale_tick;
 
-    assign prescale_target_val = (16'd1 << prescale);
+    assign prescale_target = (16'd1 << prescale);
     
-    assign prescale_tick = (en == 1'b1) && (prescale_counter == (prescale_target_val - 1));
+    assign prescale_tick = (en == 1'b1) && (prescale_counter == (prescale_target - 1));
 
     always @(posedge clk or negedge rst_n) begin
         if (!rst_n) begin
@@ -27,7 +27,7 @@ module counter (
             prescale_counter <= 16'd0;
         end 
         else begin
-            if (prescale_counter == (prescale_target_val - 1)) begin
+            if (prescale_counter == (prescale_target - 1)) begin
                 prescale_counter <= 16'd0;
             end else begin
                 prescale_counter <= prescale_counter + 1;
