@@ -1,83 +1,97 @@
 module instr_dcd (
-    // peripheral clock signals
     input clk,
     input rst_n,
-
-    // towards SPI slave interface signals
     input byte_sync,
     input[7:0] data_in,
-    output[7:0] data_out,
-    // register access signals
+    
+    output reg [7:0] data_out,
+    output reg read,
+    output reg write,
+    output reg [5:0] addr,
+    input [7:0] data_read,
+    output reg [7:0] data_write,
 
-    output read,
-    output write,
-    output[5:0] addr,
-    input[7:0] data_read,
-    output[7:0] data_write,
-
-    //high_low
     output reg high_low
 );
-// Internal store
-reg faza; // faza 0 = setup ; faza 1 = date
-reg rw_bit; // 1 = write ; 0 = read
-reg[5:0] saved_addr; // remembered address
-reg hl_bit; // remembered high_low bit
+    
+    reg faza; 
+    reg rw_bit; 
+    reg[5:0] saved_addr; 
+    reg hl_bit; 
 
-always@(posedge clk or negedge rst_n) begin
-    if(!rst_n) begin // cand se reseteaza
-        faza <= 0;
-        read <= 0;
-        write <= 0;
-        addr <= 6'h00;
-        data_write <= 8'h00;
-        data_out <= 8'h00;
-        
-        rw_bit <= 0;
-        saved_addr <= 6'h00;
-        hl_bit <= 0;
+    // registre pentru sincronizarea semnalului byte_sync
+    reg byte_sync_d1;
+    reg byte_sync_d2;
+    wire byte_sync_clk;
+
+    // detectare front pozitiv pentru byte_sync
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) begin
+            byte_sync_d1 <= 1'b0;
+            byte_sync_d2 <= 1'b0;
+        end else begin
+            byte_sync_d1 <= byte_sync;
+            byte_sync_d2 <= byte_sync_d1;
+        end
     end
-    else if(byte_sync)begin
-        if(faza == 0) begin
-            // faza de setup
+    assign byte_sync_clk = byte_sync_d1 & ~byte_sync_d2;
 
-            rw_bit <= data_in[7];  // se salveaza r/w bit
-            saved_addr <= data_in[5:0];  // se salveaza addr
-            hl_bit <= data_in[6]; // se salveaza high_low bit
-            faza <= 1; // urmatoarea faza va fi de date
+    always@(posedge clk or negedge rst_n) begin
+        if(!rst_n) begin
+            faza <= 0;
+            read <= 0;
+            write <= 0;
+            addr <= 6'h00;
+            data_write <= 8'h00;
+            data_out <= 8'h00;
+            rw_bit <= 0;
+            saved_addr <= 6'h00;
+            hl_bit <= 0;
+            high_low <= 0;
+        end
+        else if(byte_sync_clk) begin
+            if(faza == 0) begin
+                // faza de setup: salvam bitul de read/write si adresa
+                rw_bit <= data_in[7];
+                saved_addr <= data_in[5:0];
+                hl_bit <= data_in[6];
+                faza <= 1;
 
-            //clear outputs
+                write <= 0;
+                
+                // daca este operatie de citire activam semnalul read anticipat
+                // pentru a avea datele disponibile in ciclul urmator
+                if (data_in[7] == 1'b0) begin 
+                    read <= 1'b1; 
+                    addr <= data_in[5:0];
+                end else begin
+                    read <= 0;
+                end
+            end
+            else begin
+                // faza de date: folosim adresa salvata pentru a accesa registrul
+                addr <= saved_addr;
+
+                if (rw_bit == 1) begin
+                    // operatie de scriere
+                    write <= 1;
+                    data_write <= data_in;
+                    read <= 0;
+                end
+                else begin
+                    // operatie de citire
+                    read <= 1; 
+                    data_out <= data_read;
+                    write <= 0;
+                end
+                // revenim la faza de setup pentru urmatoarea tranzactie
+                faza <= 0;
+            end
+        end
+        else begin
+            // resetam semnalele de control cand nu avem byte_sync
             read <= 0;
             write <= 0;
         end
-        else begin
-            // faza de date
-            if (hl_bit == 0)
-                addr <= saved_addr;          // LOW byte
-            else
-                addr <= saved_addr + 6'd1;   // HIGH byte
-            // se face operatia de read sau write
-            if (rw_bit == 1) begin
-                // WRITE operation
-                write <= 1;
-                data_write <= data_in;
-                read <= 0;
-            end
-            else begin
-                // READ operation
-                read <= 1;
-                data_out <= data_read;
-                write <= 0;
-            end
-            faza <= 0; // urmatoarea faza va fi de setup
-        end
     end
-    else begin
-        // byte_sync  e 0 ,clear ctrl signals
-        read <= 0;
-        write <= 0;
-    end
-
-end
-
 endmodule
